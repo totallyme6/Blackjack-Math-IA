@@ -1,30 +1,37 @@
 def generate_all_states():
-    # Generates all possible states in Blackjack.
-    # A state is represented as a tuple: (player_hand, dealer_card, soft_hand).
-    # The soft_hand indicator is True only if the player's hand includes an Ace counted as 11.
+    """
+    Generates all possible states in Blackjack.
+    A state is represented as a tuple: (player_hand, dealer_card, soft_hand).
+    The soft_hand indicator is True only if the player's hand includes an Ace counted as 11.
+    """
     states = []
-    # Player's hand value ranges from 4 to 21 (or higher for busts)
-    for player_hand in range(4, 32):  # Include values up to 31 to account for busts
+
+    # Player's hand value ranges from 4 to 32 (to account for busts)
+    for player_hand in range(4, 32):
         # Dealer's visible card ranges from 2 to 11 (Ace is treated as 11)
         for dealer_card in range(2, 12):
             # Determine if the player has a soft hand
             soft_hand = False
             if player_hand <= 21:  # Only consider hands that haven't busted
-                # Check if the player's hand includes an Ace counted as 11
+                # Check if the player's hand could include an Ace counted as 11
                 if player_hand - 10 >= 4:  # Minimum hand value is 4
                     soft_hand = True
-            # Add the state to the list
+
+            # Add both soft and hard hand states to the list
             states.append((player_hand, dealer_card, soft_hand))
+            if player_hand <= 21 and soft_hand:
+                # Also add the corresponding hard hand state (Ace counted as 1)
+                states.append((player_hand, dealer_card, False))
+
     return states
-# Generate all possible states
-all_states = generate_all_states()
+
 
 def calculate_transition_probabilities(state, action):
     player_hand, dealer_card, soft_hand = state
     transition_probs = {}
+
     if action == 'hit':
         # When the player hits, they draw a card
-        # Possible next states depend on the card drawn
         for card, prob in card_probabilities.items():
             if card == 'Ace':
                 new_player_hand = player_hand + 11
@@ -32,84 +39,129 @@ def calculate_transition_probabilities(state, action):
             else:
                 new_player_hand = player_hand + card
                 new_soft_hand = soft_hand
+
             # Check if the new hand is still soft
             if new_player_hand > 21 and new_soft_hand:
                 # If the player busts but has a soft hand, treat Ace as 1
                 new_player_hand -= 10
                 new_soft_hand = False
-            # Add the next state and its probability
-            next_state = (new_player_hand, dealer_card, new_soft_hand)
-            if next_state in transition_probs:
-                transition_probs[next_state] += prob
-            else:
-                transition_probs[next_state] = prob
+
+            # Ensure the new state is valid
+            if new_player_hand <= 31:  # Only include valid states
+                next_state = (new_player_hand, dealer_card, new_soft_hand)
+                if next_state in transition_probs:
+                    transition_probs[next_state] += prob
+                else:
+                    transition_probs[next_state] = prob
+
     elif action == 'stand':
         # When the player stands, the dealer takes their turn
+        # Simulate the dealer's possible outcomes
+        dealer_outcomes = simulate_dealer(dealer_card)
+
         # The next state depends on the dealer's final hand
-        # For simplicity, assume the dealer follows fixed rules (hit until >= 17)
-        # We'll simulate the dealer's possible outcomes
-        dealer_hand = dealer_card
-        while dealer_hand < 17:
-            # Dealer draws a card
-            card = draw_card()
-            if card == 'Ace':
-                dealer_hand += 11
-                if dealer_hand > 21:
-                    dealer_hand -= 10  # Treat Ace as 1 if busting
-            else:
-                dealer_hand += card
-        # The next state is the player's hand, dealer's final hand, and soft hand
-        next_state = (player_hand, dealer_hand, soft_hand)
-        transition_probs[next_state] = 1.0  # Only one possible outcome
+        for dealer_hand, dealer_prob in dealer_outcomes.items():
+            next_state = (player_hand, dealer_hand, soft_hand)
+            transition_probs[next_state] = dealer_prob
+
     return transition_probs
-# Helper function to draw a card (based on card probabilities)
+
+
+def simulate_dealer(dealer_card):
+    dealer_outcomes = {}
+
+    # Use a recursive helper function to simulate the dealer's turn
+    def simulate(dealer_hand, soft_hand, prob):
+        if dealer_hand >= 17:
+            # Dealer stands
+            if dealer_hand > 21:
+                dealer_hand = -1  # Dealer busts
+            if dealer_hand in dealer_outcomes:
+                dealer_outcomes[dealer_hand] += prob
+            else:
+                dealer_outcomes[dealer_hand] = prob
+        else:
+            # Dealer hits
+            for card, card_prob in card_probabilities.items():
+                if card == 'Ace':
+                    new_dealer_hand = dealer_hand + 11
+                    new_soft_hand = True
+                else:
+                    new_dealer_hand = dealer_hand + card
+                    new_soft_hand = soft_hand
+
+                # Check if the new hand is still soft
+                if new_dealer_hand > 21 and new_soft_hand:
+                    # If the dealer busts but has a soft hand, treat Ace as 1
+                    new_dealer_hand -= 10
+                    new_soft_hand = False
+
+                # Recursively simulate the dealer's turn
+                simulate(new_dealer_hand, new_soft_hand, prob * card_prob)
+
+    # Start the simulation with the dealer's initial hand
+    simulate(dealer_card, dealer_card == 11, 1.0)
+
+    return dealer_outcomes
+
+
 def draw_card():
+    """
+    Simulates drawing a card based on card probabilities.
+    """
     import random
     cards = list(card_probabilities.keys())
     probs = list(card_probabilities.values())
     return random.choices(cards, weights=probs, k=1)[0]
+
+
 # Define card probabilities (infinite deck assumption)
 card_probabilities = {
-    2: 1/13,
-    3: 1/13,
-    4: 1/13,
-    5: 1/13,
-    6: 1/13,
-    7: 1/13,
-    8: 1/13,
-    9: 1/13,
-    10: 4/13,  # 10, J, Q, K
-    'Ace': 1/13
+    2: 1 / 13,
+    3: 1 / 13,
+    4: 1 / 13,
+    5: 1 / 13,
+    6: 1 / 13,
+    7: 1 / 13,
+    8: 1 / 13,
+    9: 1 / 13,
+    10: 4 / 13,  # 10, J, Q, K
+    'Ace': 1 / 13
 }
-# Example usage
-state = (12, 7, False)  # Player's hand = 12, Dealer's card = 7, No soft hand
-action = 'hit'  # Player chooses to hit
-# Calculate transition probabilities
-transition_probs = calculate_transition_probabilities(state, action)
+
 
 def value_iteration(states, actions, transition_probs, rewards, theta=0.001):
     # Initialize Q-values to 0 for all state-action pairs
     Q = {(s, a): 0 for s in states for a in actions}
+
     while True:
         delta = 0  # Maximum change in Q-values across all state-action pairs
+
         # Update Q-values for each state-action pair
         for s in states:
             for a in actions:
                 # Current Q-value
                 old_q = Q[(s, a)]
+
                 # Calculate the expected future reward
                 future_reward = 0
                 for s_prime, prob in transition_probs(s, a).items():
-                    # Find the maximum Q-value for the next state s_prime
-                    max_q_prime = max(Q[(s_prime, a_prime)] for a_prime in actions)
-                    future_reward += prob * max_q_prime
+                    # Ensure the next state s_prime is in the Q dictionary
+                    if s_prime in states:
+                        # Find the maximum Q-value for the next state s_prime
+                        max_q_prime = max(Q[(s_prime, a_prime)] for a_prime in actions)
+                        future_reward += prob * max_q_prime
+
                 # Update the Q-value using the Bellman equation
                 Q[(s, a)] = rewards(s) + future_reward
+
                 # Update the maximum change in Q-values
                 delta = max(delta, abs(old_q - Q[(s, a)]))
+
         # Check for convergence
         if delta < theta:
             break
+
     # Derive the optimal policy
     policy = {}
     for s in states:
@@ -117,25 +169,35 @@ def value_iteration(states, actions, transition_probs, rewards, theta=0.001):
         policy[s] = max(actions, key=lambda a: Q[(s, a)])
 
     return Q, policy
-# Example usage
-states = generate_all_states()  # Use the state generation function from earlier
-actions = ['hit', 'stand']  # Possible actions
+
+
 # Define the reward function
 def rewards(state):
-    player_hand, dealer_card, soft_hand = state
+    """
+    Returns the immediate reward for a given state.
+    """
+    player_hand, dealer_hand, soft_hand = state
     if player_hand > 21:  # Player busts
         return -1
-    elif dealer_card > 21:  # Dealer busts
+    elif dealer_hand == -1:  # Dealer busts
         return 1
-    elif player_hand > dealer_card:  # Player wins
+    elif player_hand > dealer_hand:  # Player wins
         return 1
-    elif player_hand < dealer_card:  # Player loses
+    elif player_hand < dealer_hand:  # Player loses
         return -1
     else:  # Push (tie)
         return 0
+
+
+# Generate all possible states
+states = generate_all_states()
+
+# Define possible actions
+actions = ['hit', 'stand']
+
 # Perform value iteration
 Q, policy = value_iteration(states, actions, calculate_transition_probabilities, rewards)
-# Print the optimal policy
+
 print("Optimal Policy:")
 for state in list(states):
     print(f"State: {state}, Optimal Action: {policy[state]}")
